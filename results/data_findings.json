@@ -1,0 +1,165 @@
+{
+  "channel": "book_snapshot_25",
+  "n_markets": 12,
+  "n_usable_markets": 12,
+  "usable_markets": [
+    {
+      "label": "Thunder vs Lakers",
+      "outcome": "Thunder"
+    },
+    {
+      "label": "76ers vs Celtics",
+      "outcome": "76ers"
+    },
+    {
+      "label": "Suns vs Thunder",
+      "outcome": "Suns"
+    },
+    {
+      "label": "Lakers vs Rockets",
+      "outcome": "Lakers"
+    },
+    {
+      "label": "Knicks vs 76ers",
+      "outcome": "Knicks"
+    },
+    {
+      "label": "Spurs vs Timberwolves",
+      "outcome": "Spurs"
+    },
+    {
+      "label": "Timberwolves vs Nuggets",
+      "outcome": "Wolves"
+    },
+    {
+      "label": "Raptors vs Cavaliers",
+      "outcome": "Raptors"
+    },
+    {
+      "label": "Spurs vs Trail Blazers",
+      "outcome": "Spurs"
+    },
+    {
+      "label": "Pistons vs Magic",
+      "outcome": "Pistons"
+    },
+    {
+      "label": "Knicks vs Hawks",
+      "outcome": "Knicks"
+    },
+    {
+      "label": "Cavaliers vs Pistons",
+      "outcome": "Cavs"
+    }
+  ],
+  "liquidity": [
+    {
+      "label": "Thunder vs Lakers",
+      "outcome": "Thunder",
+      "valid_rows": 50357,
+      "med_spread": 0.010000000000000009,
+      "tight_frac": 0.9992453879301785,
+      "med_mid": 0.9604999999999999,
+      "usable": true
+    },
+    {
+      "label": "76ers vs Celtics",
+      "outcome": "76ers",
+      "valid_rows": 287598,
+      "med_spread": 0.013000000000000005,
+      "tight_frac": 0.948407151649177,
+      "med_mid": 0.08349999999999999,
+      "usable": true
+    },
+    {
+      "label": "Suns vs Thunder",
+      "outcome": "Suns",
+      "valid_rows": 44340,
+      "med_spread": 0.006999999999999999,
+      "tight_frac": 0.9431889941362201,
+      "med_mid": 0.011,
+      "usable": true
+    },
+    {
+      "label": "Lakers vs Rockets",
+      "outcome": "Lakers",
+      "valid_rows": 403384,
+      "med_spread": 0.01100000000000001,
+      "tight_frac": 0.9311251809690022,
+      "med_mid": 0.7475,
+      "usable": true
+    },
+    {
+      "label": "Knicks vs 76ers",
+      "outcome": "Knicks",
+      "valid_rows": 46929,
+      "med_spread": 0.015000000000000013,
+      "tight_frac": 0.9297236250506083,
+      "med_mid": 0.87,
+      "usable": true
+    },
+    {
+      "label": "Spurs vs Timberwolves",
+      "outcome": "Spurs",
+      "valid_rows": 123466,
+      "med_spread": 0.010000000000000009,
+      "tight_frac": 0.9176372442615781,
+      "med_mid": 0.8,
+      "usable": true
+    },
+    {
+      "label": "Timberwolves vs Nuggets",
+      "outcome": "Wolves",
+      "valid_rows": 344772,
+      "med_spread": 0.010000000000000009,
+      "tight_frac": 0.9164520320675693,
+      "med_mid": 0.425,
+      "usable": true
+    },
+    {
+      "label": "Raptors vs Cavaliers",
+      "outcome": "Raptors",
+      "valid_rows": 275075,
+      "med_spread": 0.017,
+      "tight_frac": 0.9035063164591475,
+      "med_mid": 0.2125,
+      "usable": true
+    },
+    {
+      "label": "Spurs vs Trail Blazers",
+      "outcome": "Spurs",
+      "valid_rows": 126310,
+      "med_spread": 0.016999999999999904,
+      "tight_frac": 0.8760826537882986,
+      "med_mid": 0.899,
+      "usable": true
+    },
+    {
+      "label": "Pistons vs Magic",
+      "outcome": "Pistons",
+      "valid_rows": 256008,
+      "med_spread": 0.01100000000000001,
+      "tight_frac": 0.8638011312146495,
+      "med_mid": 0.536,
+      "usable": true
+    },
+    {
+      "label": "Knicks vs Hawks",
+      "outcome": "Knicks",
+      "valid_rows": 125431,
+      "med_spread": 0.019999999999999907,
+      "tight_frac": 0.8621792060973762,
+      "med_mid": 0.695,
+      "usable": true
+    },
+    {
+      "label": "Cavaliers vs Pistons",
+      "outcome": "Cavs",
+      "valid_rows": 112794,
+      "med_spread": 0.020000000000000018,
+      "tight_frac": 0.6948419242158271,
+      "med_mid": 0.385,
+      "usable": true
+    }
+  ]
+}

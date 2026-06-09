@@ -1,0 +1,7 @@
+# Core ML / data deps for local runs of src/cnn_lstm.py
+numpy>=1.24
+scikit-learn>=1.3
+torch>=2.2
+
+# Cloud execution (src/modal_app.py)
+modal>=1.3
