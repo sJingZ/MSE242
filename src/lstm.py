@@ -23,6 +23,7 @@ Run from the CLI, e.g.::
     python src/lstm.py --quick                      # tiny fast smoke run
     python src/lstm.py --markets "Suns vs Thunder__Suns" --hidden 256
     python src/lstm.py --num-layers 3 --tag stacked  # paper's "LSTM (3)" row
+    python src/lstm.py --max-epochs 50 --save-model  # also write runs/<ts>.pt
 
 Import and call programmatically (Colab notebook cell, Modal function, ...):
 
@@ -112,6 +113,7 @@ class Config:
     device: str = "auto"  # auto | cpu | cuda | mps
     num_workers: int = 0
     tag: str = ""  # free-form experiment label
+    save_model: bool = False  # also write the trained state_dict to runs/<ts>.pt
 
     # Filled in at load time (not user-set)
     horizons: list = field(default_factory=list)
@@ -664,6 +666,13 @@ def run_experiment(cfg: Config, *, write: bool = True, return_model: bool = Fals
         buf = io.BytesIO()
         torch.save(model.state_dict(), buf)
         model_state = buf.getvalue()
+        # When writing locally (CLI/Colab --save-model), drop the checkpoint
+        # next to the run JSON so it's loadable later. The Modal path uses
+        # write=False and persists the .pt itself on the local side.
+        if write and detail_path is not None:
+            pt_path = detail_path.with_suffix(".pt")
+            pt_path.write_bytes(model_state)
+            print(f"Saved model checkpoint  -> {pt_path}")
     return {"record": record, "model_state": model_state}
 
 
@@ -713,6 +722,8 @@ def build_config_from_args(argv: Optional[list] = None) -> Config:
     p.add_argument("--device", default=d.device, choices=["auto", "cpu", "cuda", "mps"])
     p.add_argument("--num-workers", type=int, default=d.num_workers)
     p.add_argument("--tag", default=d.tag)
+    p.add_argument("--save-model", dest="save_model", action="store_true",
+                   help="also save the trained state_dict to runs/<ts>.pt")
     p.add_argument("--quick", action="store_true",
                    help="tiny fast run for smoke-testing (few epochs/windows)")
     args = p.parse_args(argv)
@@ -728,7 +739,8 @@ def build_config_from_args(argv: Optional[list] = None) -> Config:
         standardize_targets=args.standardize_targets,
         linear_benchmark=args.linear_benchmark,
         linear_fit_windows=args.linear_fit_windows, seed=args.seed,
-        device=args.device, num_workers=args.num_workers, tag=args.tag)
+        device=args.device, num_workers=args.num_workers, tag=args.tag,
+        save_model=args.save_model)
 
     if args.quick:
         cfg.max_epochs = min(cfg.max_epochs, 2)
@@ -743,7 +755,7 @@ def build_config_from_args(argv: Optional[list] = None) -> Config:
 
 def main():
     cfg = build_config_from_args()
-    run_experiment(cfg, write=True)
+    run_experiment(cfg, write=True, return_model=cfg.save_model)
 
 
 if __name__ == "__main__":

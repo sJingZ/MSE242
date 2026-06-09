@@ -35,6 +35,7 @@ Results land exactly where local runs put them:
 """
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -61,6 +62,11 @@ MODEL_REGISTRY = {
         "file": SRC_DIR / "cnn_lstm.py",
         "module": "cnn_lstm",
         "label": "CNN-LSTM (OF order-flow mid-price-return forecaster)",
+    },
+    "lstm": {
+        "file": SRC_DIR / "lstm.py",
+        "module": "lstm",
+        "label": "LSTM (OF order-flow mid-price-return forecaster)",
     },
 }
 
@@ -124,7 +130,8 @@ def _train_impl(model: str, params: dict, return_model: bool) -> dict:
     sys.path.insert(0, REMOTE_CODE_DIR)
     mod = importlib.import_module(MODEL_REGISTRY[model]["module"])
 
-    cfg = mod.Config(**params)
+    cfg_fields = {f.name for f in dataclasses.fields(mod.Config)}
+    cfg = mod.Config(**{k: v for k, v in params.items() if k in cfg_fields})
     cfg.data_dir = REMOTE_DATA_DIR          # read the dataset shipped in the image
     cfg.results_dir = "/root/results"       # unused (write=False) but keep it valid
 
@@ -213,6 +220,10 @@ def main(
     hidden: int = 64,
     cnn_filters: int = 32,
     inception_filters: int = 64,
+    # --- lstm-only knobs (ignored by cnn_lstm; see _train_impl field filter) ---
+    num_layers: int = 1,
+    dropout: float = 0.0,
+    forget_bias_init: float = 1.0,
     batch_size: int = 256,
     lr: float = 1e-3,
     weight_decay: float = 0.0,
@@ -254,7 +265,9 @@ def main(
         markets=markets, window=window, train_stride=train_stride,
         eval_stride=eval_stride, max_train_windows=max_train_windows,
         hidden=hidden, cnn_filters=cnn_filters,
-        inception_filters=inception_filters, batch_size=batch_size, lr=lr,
+        inception_filters=inception_filters, num_layers=num_layers,
+        dropout=dropout, forget_bias_init=forget_bias_init,
+        batch_size=batch_size, lr=lr,
         weight_decay=weight_decay, max_epochs=max_epochs, patience=patience,
         grad_clip=grad_clip, linear_benchmark=linear_benchmark,
         linear_fit_windows=linear_fit_windows, seed=seed, tag=tag,
