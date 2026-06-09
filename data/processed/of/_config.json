@@ -1,0 +1,80 @@
+{
+  "n_levels": 10,
+  "of_dim": 20,
+  "window": 100,
+  "horizons": [
+    1,
+    2,
+    3,
+    5,
+    10
+  ],
+  "winsor": [
+    0.005,
+    0.995
+  ],
+  "train_frac": 0.7,
+  "val_frac": 0.15,
+  "markets": [
+    {
+      "key": "Thunder vs Lakers__Thunder",
+      "file": "Thunder_vs_Lakers_Thunder.npz",
+      "n": 45375
+    },
+    {
+      "key": "76ers vs Celtics__76ers",
+      "file": "76ers_vs_Celtics_76ers.npz",
+      "n": 263561
+    },
+    {
+      "key": "Suns vs Thunder__Suns",
+      "file": "Suns_vs_Thunder_Suns.npz",
+      "n": 38977
+    },
+    {
+      "key": "Lakers vs Rockets__Lakers",
+      "file": "Lakers_vs_Rockets_Lakers.npz",
+      "n": 377169
+    },
+    {
+      "key": "Knicks vs 76ers__Knicks",
+      "file": "Knicks_vs_76ers_Knicks.npz",
+      "n": 39933
+    },
+    {
+      "key": "Spurs vs Timberwolves__Spurs",
+      "file": "Spurs_vs_Timberwolves_Spurs.npz",
+      "n": 113201
+    },
+    {
+      "key": "Timberwolves vs Nuggets__Wolves",
+      "file": "Timberwolves_vs_Nuggets_Wolves.npz",
+      "n": 329878
+    },
+    {
+      "key": "Raptors vs Cavaliers__Raptors",
+      "file": "Raptors_vs_Cavaliers_Raptors.npz",
+      "n": 262378
+    },
+    {
+      "key": "Spurs vs Trail Blazers__Spurs",
+      "file": "Spurs_vs_Trail_Blazers_Spurs.npz",
+      "n": 114890
+    },
+    {
+      "key": "Pistons vs Magic__Pistons",
+      "file": "Pistons_vs_Magic_Pistons.npz",
+      "n": 237911
+    },
+    {
+      "key": "Knicks vs Hawks__Knicks",
+      "file": "Knicks_vs_Hawks_Knicks.npz",
+      "n": 116366
+    },
+    {
+      "key": "Cavaliers vs Pistons__Cavs",
+      "file": "Cavaliers_vs_Pistons_Cavs.npz",
+      "n": 102193
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+# Large raw data and datasets (not tracked)
+data/raw/
+datasets/
+
+# OS / editor junk
+.DS_Store
+
+# Python caches
+__pycache__/
+*.pyc
