@@ -66,3 +66,11 @@ results/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Data files
+data/
+datasets/
+*.parquet
+*.csv
+*.pkl
+*.pickle
