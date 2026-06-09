@@ -2,9 +2,33 @@
 data/raw/
 datasets/
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter / Colab
+.ipynb_checkpoints/
+
 # OS / editor junk
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
 
-# Python caches
-__pycache__/
-*.pyc
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Caches
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
