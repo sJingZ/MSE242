@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter / Colab
+.ipynb_checkpoints/
+*.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/editor files
+.vscode/
+.idea/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Data files
+datasets/
+data/
+*.parquet
+*.csv
+*.tsv
+*.jsonl
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.feather
+
+# Large compressed files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.bz2
+*.xz
+
+# Model/checkpoint files
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.joblib
+
+# Logs and outputs
+logs/
+outputs/
+results/
+*.log
+
+# Cache
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
