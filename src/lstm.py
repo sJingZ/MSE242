@@ -607,6 +607,9 @@ def run_experiment(cfg: Config, *, write: bool = True, return_model: bool = Fals
         return compute_metrics(pred, true, naive, cfg.horizons, cfg.sharpe_ann_factor)
 
     out_sample = eval_split(test_loader, test_idx)
+    # Validation metrics drive model/hyper-parameter selection in the sweep;
+    # the test split is reported only once, for the finally-chosen config.
+    validation = eval_split(val_loader, val_idx) if has_val else None
     # NOTE: train_loader is shuffled (for SGD), so its prediction order would
     # not line up with gather_targets(train_idx). Use a fresh un-shuffled
     # loader so in-sample preds/targets stay aligned. (Same fix as cnn_lstm.)
@@ -649,6 +652,7 @@ def run_experiment(cfg: Config, *, write: bool = True, return_model: bool = Fals
             "history": history,
         },
         "metrics": {
+            "validation": validation,
             "out_of_sample": out_sample,
             "in_sample": in_sample,
             "linear_benchmark_oos": bench_lin,
