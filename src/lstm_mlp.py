@@ -1,41 +1,49 @@
 #!/usr/bin/env python3
-"""LSTM for Polymarket Order-Flow (OF) mid-price-return forecasting.
+"""LSTM-MLP for Polymarket Order-Flow (OF) mid-price-return forecasting.
 
-Implements the paper's vanilla LSTM architecture (Kolm, Turiel & Westray 2021,
-Table 2 "LSTM" row) in PyTorch. Mirrors the structure of ``cnn_lstm.py`` so
-the two scripts share Config field names, CLI flags, and results JSON schema
--- which means a single Modal wrapper can run either model just by changing
-the import.
+Implements the paper's LSTM-MLP architecture (Kolm, Turiel & Westray 2021,
+Table 2 "LSTM-MLP" row) in PyTorch. This is the vanilla LSTM with its single
+linear readout replaced by a small multi-layer perceptron head. It is a strict
+generalization of ``lstm.py``: with ``mlp_layers=0`` the head collapses back to
+a plain ``Linear(hidden, H)`` and the model is identical to the LSTM. All other
+machinery (data, windowing, metrics, PnL sidecar, results schema) mirrors
+``lstm.py``/``cnn_lstm.py`` so the same Modal wrapper runs any of them.
 
 Architecture (OF input, shapes shown as [batch x time x feature]):
     Input  [B, 100, 20]
     LSTM   (num_layers=1, hidden=128, batch_first=True)
         -> last hidden state [B, 128]
-    Linear (128 -> H)
+    MLP head: [Linear(-> mlp_hidden) -> activation -> dropout?] x mlp_layers
+              -> Linear(-> H)
         -> alpha term structure [B, H]
 
 The forget-gate bias is initialized to 1.0 (Gers et al. 2000) for both
 ``bias_ih`` and ``bias_hh`` chunks, matching the paper's setup.
 
+The MLP head is fully tunable via ``--mlp-hidden`` / ``--mlp-layers`` /
+``--mlp-dropout`` / ``--mlp-activation``. Defaults (mlp_hidden=64, mlp_layers=1,
+ReLU) keep total params ~85K, in line with the paper's ~1e5 budget. Confirm the
+exact head dims against the paper's Table 2 before the official baseline.
+
 Run from the CLI, e.g.::
 
-    python src/lstm.py --max-epochs 50 --batch-size 256 --lr 1e-5
-    python src/lstm.py --quick                      # tiny fast smoke run
-    python src/lstm.py --markets "Suns vs Thunder__Suns" --hidden 256
-    python src/lstm.py --num-layers 3 --tag stacked  # paper's "LSTM (3)" row
-    python src/lstm.py --max-epochs 50 --save-model  # also write runs/<ts>.pt
+    python src/lstm_mlp.py --max-epochs 50 --batch-size 256 --lr 1e-5
+    python src/lstm_mlp.py --quick                       # tiny fast smoke run
+    python src/lstm_mlp.py --mlp-hidden 128 --mlp-layers 2  # wider/deeper head
+    python src/lstm_mlp.py --mlp-layers 0 --tag asplainlstm # head == plain LSTM
+    python src/lstm_mlp.py --max-epochs 50 --save-model  # also write runs/<ts>.pt
 
 Import and call programmatically (Colab notebook cell, Modal function, ...):
 
-    from lstm import run_experiment, Config
+    from lstm_mlp import run_experiment, Config
     out = run_experiment(Config(max_epochs=50, tag="baseline"))
     record = out["record"]
 
 Every run appends a full record (config + all metrics) to
 ``results/experiments.jsonl`` and writes a detailed per-run JSON to
-``results/runs/lstm_<timestamp>.json``.
+``results/runs/lstm_mlp_<timestamp>.json``.
 
-Paper-faithful defaults for the LSTM row (Table 2):
+Paper-faithful defaults for the LSTM-MLP row (Table 2):
     lr=1e-5, batch_size=256, max_epochs=50, patience=5, hidden=128.
 Note the 1e-5 learning rate -- two orders of magnitude smaller than the
 CNN-LSTM's 1e-3. Inherit at your own risk.
@@ -66,8 +74,8 @@ except ImportError as e:  # pragma: no cover
 
 
 # Used in record_experiment() filenames + record["model"] field.
-MODEL_NAME = "LSTM"
-RESULTS_FILE_PREFIX = "lstm"
+MODEL_NAME = "LSTM-MLP"
+RESULTS_FILE_PREFIX = "lstm_mlp"
 
 
 # --------------------------------------------------------------------------- #
@@ -90,11 +98,17 @@ class Config:
     eval_stride: int = 10   # subsample stride for val/test windows
     max_train_windows: int = 0  # 0 = no cap; else random-cap train windows
 
-    # Model (paper Table 2, LSTM row)
-    hidden: int = 128       # ~80K LSTM params -> matches paper's ~1e5 total
-    num_layers: int = 1     # use 3 for the paper's "LSTM (3)" row
+    # Model (paper Table 2, LSTM-MLP row)
+    hidden: int = 128       # LSTM hidden size (~76K LSTM params)
+    num_layers: int = 1     # stacked LSTM layers
     dropout: float = 0.0    # only applied when num_layers > 1 (PyTorch convention)
     forget_bias_init: float = 1.0  # forget-gate bias init (Gers et al. 2000)
+    # MLP head (replaces the plain Linear readout). Fully tunable; mlp_layers=0
+    # collapses the head to Linear(hidden, H), i.e. the vanilla LSTM.
+    mlp_hidden: int = 64        # width of each MLP hidden layer
+    mlp_layers: int = 1         # number of hidden layers in the head
+    mlp_dropout: float = 0.0    # dropout after each MLP activation
+    mlp_activation: str = "relu"  # relu | gelu | tanh
 
     # Training (paper Table 2)
     batch_size: int = 256
@@ -233,16 +247,49 @@ def gather_targets(markets, index):
 # --------------------------------------------------------------------------- #
 # Model                                                                       #
 # --------------------------------------------------------------------------- #
-class LSTMModel(nn.Module):
-    """Vanilla LSTM for OF input. (N, window, of_dim) -> (N, H).
+_ACTIVATIONS = {"relu": nn.ReLU, "gelu": nn.GELU, "tanh": nn.Tanh}
 
-    Paper Table 2 "LSTM" row: ~1.0e5 params with hidden=128. The forget-gate
-    bias is initialized to ``cfg.forget_bias_init`` (paper uses 1.0).
+
+def _build_mlp_head(in_dim: int, n_horizons: int, mlp_hidden: int,
+                    mlp_layers: int, mlp_dropout: float,
+                    activation: str) -> nn.Module:
+    """Feed-forward head mapping the LSTM's last hidden state -> (H,).
+
+    ``mlp_layers`` hidden layers of width ``mlp_hidden`` (each: Linear ->
+    activation -> optional dropout), then a final Linear to ``n_horizons``.
+    With ``mlp_layers == 0`` this is exactly ``Linear(in_dim, n_horizons)`` --
+    i.e. the vanilla LSTM readout, so LSTM-MLP strictly generalizes the LSTM.
+    """
+    act_cls = _ACTIVATIONS.get(activation.lower())
+    if act_cls is None:
+        raise ValueError(
+            f"Unknown mlp_activation '{activation}'. "
+            f"Choices: {sorted(_ACTIVATIONS)}.")
+    layers = []
+    d = in_dim
+    for _ in range(max(mlp_layers, 0)):
+        layers.append(nn.Linear(d, mlp_hidden))
+        layers.append(act_cls())
+        if mlp_dropout > 0:
+            layers.append(nn.Dropout(mlp_dropout))
+        d = mlp_hidden
+    layers.append(nn.Linear(d, n_horizons))
+    return nn.Sequential(*layers)
+
+
+class LSTMMLPModel(nn.Module):
+    """LSTM trunk + MLP head for OF input. (N, window, of_dim) -> (N, H).
+
+    Paper Table 2 "LSTM-MLP" row. The forget-gate bias is initialized to
+    ``cfg.forget_bias_init`` (paper uses 1.0). The head is configurable via
+    ``mlp_*`` args; ``mlp_layers=0`` reduces it to the plain LSTM readout.
     """
 
     def __init__(self, of_dim: int, n_horizons: int, hidden: int = 128,
                  num_layers: int = 1, dropout: float = 0.0,
-                 forget_bias_init: float = 1.0):
+                 forget_bias_init: float = 1.0, mlp_hidden: int = 64,
+                 mlp_layers: int = 1, mlp_dropout: float = 0.0,
+                 mlp_activation: str = "relu"):
         super().__init__()
         self.lstm = nn.LSTM(
             input_size=of_dim,
@@ -251,7 +298,9 @@ class LSTMModel(nn.Module):
             batch_first=True,
             dropout=dropout if num_layers > 1 else 0.0,
         )
-        self.fc = nn.Linear(hidden, n_horizons)
+        self.head = _build_mlp_head(
+            hidden, n_horizons, mlp_hidden, mlp_layers, mlp_dropout,
+            mlp_activation)
         self._init_lstm_forget_bias(forget_bias_init)
 
     def _init_lstm_forget_bias(self, value: float):
@@ -271,7 +320,7 @@ class LSTMModel(nn.Module):
     def forward(self, x):
         # x: (N, window, of_dim)
         out, _ = self.lstm(x)            # (N, window, hidden)
-        return self.fc(out[:, -1, :])    # last time step -> (N, H)
+        return self.head(out[:, -1, :])  # last time step -> MLP head -> (N, H)
 
 
 def build_model(cfg: Config, n_horizons: int, device: torch.device) -> nn.Module:
@@ -279,13 +328,17 @@ def build_model(cfg: Config, n_horizons: int, device: torch.device) -> nn.Module
     before construction so the init is reproducible regardless of how much
     randomness has been consumed earlier in the run."""
     torch.manual_seed(cfg.seed)
-    return LSTMModel(
+    return LSTMMLPModel(
         of_dim=cfg.of_dim,
         n_horizons=n_horizons,
         hidden=cfg.hidden,
         num_layers=cfg.num_layers,
         dropout=cfg.dropout,
         forget_bias_init=cfg.forget_bias_init,
+        mlp_hidden=cfg.mlp_hidden,
+        mlp_layers=cfg.mlp_layers,
+        mlp_dropout=cfg.mlp_dropout,
+        mlp_activation=cfg.mlp_activation,
     ).to(device)
 
 
@@ -689,7 +742,8 @@ def run_experiment(cfg: Config, *, write: bool = True, return_model: bool = Fals
 
     # --- record ---
     record = {
-        "model": f"{MODEL_NAME} (OF, num_layers={cfg.num_layers}, hidden={cfg.hidden})",
+        "model": (f"{MODEL_NAME} (OF, num_layers={cfg.num_layers}, "
+                  f"hidden={cfg.hidden}, mlp={cfg.mlp_layers}x{cfg.mlp_hidden})"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "tag": cfg.tag,
         "device": str(device),
@@ -766,7 +820,7 @@ def build_config_from_args(argv: Optional[list] = None) -> Config:
     """Parse argv into a Config. Pass ``argv=None`` to read from sys.argv
     (default behaviour); pass a list to override (handy for tests)."""
     p = argparse.ArgumentParser(
-        description="Train + evaluate an LSTM on Polymarket OF data.",
+        description="Train + evaluate an LSTM-MLP on Polymarket OF data.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     d = Config()
     # paths
@@ -787,6 +841,16 @@ def build_config_from_args(argv: Optional[list] = None) -> Config:
     p.add_argument("--dropout", type=float, default=d.dropout,
                    help="dropout between LSTM layers (only used when num_layers > 1)")
     p.add_argument("--forget-bias-init", type=float, default=d.forget_bias_init)
+    # mlp head
+    p.add_argument("--mlp-hidden", type=int, default=d.mlp_hidden,
+                   help="width of each MLP head hidden layer")
+    p.add_argument("--mlp-layers", type=int, default=d.mlp_layers,
+                   help="number of MLP head hidden layers (0 = plain LSTM readout)")
+    p.add_argument("--mlp-dropout", type=float, default=d.mlp_dropout,
+                   help="dropout after each MLP head activation")
+    p.add_argument("--mlp-activation", default=d.mlp_activation,
+                   choices=sorted(_ACTIVATIONS),
+                   help="MLP head activation function")
     # training
     p.add_argument("--batch-size", type=int, default=d.batch_size)
     p.add_argument("--lr", type=float, default=d.lr,
@@ -817,6 +881,8 @@ def build_config_from_args(argv: Optional[list] = None) -> Config:
         eval_stride=args.eval_stride, max_train_windows=args.max_train_windows,
         hidden=args.hidden, num_layers=args.num_layers, dropout=args.dropout,
         forget_bias_init=args.forget_bias_init,
+        mlp_hidden=args.mlp_hidden, mlp_layers=args.mlp_layers,
+        mlp_dropout=args.mlp_dropout, mlp_activation=args.mlp_activation,
         batch_size=args.batch_size, lr=args.lr, weight_decay=args.weight_decay,
         max_epochs=args.max_epochs, patience=args.patience, grad_clip=args.grad_clip,
         standardize_targets=args.standardize_targets,
