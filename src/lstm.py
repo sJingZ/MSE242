@@ -711,6 +711,7 @@ def run_experiment(cfg: Config, *, write: bool = True, return_model: bool = Fals
         },
         "metrics": {
             "validation": validation,
+            "validation": validation,
             "out_of_sample": out_sample,
             "in_sample": in_sample,
             "linear_benchmark_oos": bench_lin,
