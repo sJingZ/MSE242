@@ -297,14 +297,26 @@ def count_params(model: nn.Module) -> int:
 # Metrics                                                                     #
 # (verbatim from cnn_lstm.py to keep the results JSON schema identical)       #
 # --------------------------------------------------------------------------- #
-def compute_metrics(pred, true, benchmark_pred, horizons, ann_factor):
-    """Per-horizon R2_OS, directional accuracy, Sharpe, and MSEs.
+def compute_metrics(pred, true, benchmark_pred, horizons, ann_factor,
+                    return_series=False):
+    """Per-horizon R2_OS, directional accuracy, Sharpe, PnL, and MSEs.
 
     pred, true, benchmark_pred : (N, H) arrays (raw return units).
     benchmark_pred is the naive constant prediction (e.g. train mean per horizon).
+
+    PnL convention: take a 1-unit position in the predicted direction and hold
+    over the horizon, so per-window pnl = sign(pred) * realized_return. This is
+    the same quantity that backs ``mean_pnl``/``sharpe``; the per-horizon summary
+    stats (total/std/win-rate/cum/drawdown) all derive from it.
+
+    If ``return_series`` is True, also return the raw (N, H) per-window PnL matrix
+    so the caller can persist the full out-of-sample series.
     """
     out = {"r2_oos": {}, "directional_accuracy": {}, "directional_coverage": {},
-           "sharpe": {}, "mean_pnl": {}, "mse_model": {}, "mse_naive": {}}
+           "sharpe": {}, "mean_pnl": {}, "total_pnl": {}, "pnl_std": {},
+           "pnl_win_rate": {}, "cum_pnl_final": {}, "max_drawdown": {},
+           "mse_model": {}, "mse_naive": {}}
+    pnl_cols = []
     for j, h in enumerate(horizons):
         hk = str(h)
         p, y = pred[:, j], true[:, j]
@@ -327,9 +339,25 @@ def compute_metrics(pred, true, benchmark_pred, horizons, ann_factor):
             out["directional_accuracy"][hk] = float("nan")
 
         pnl = np.sign(p) * y  # long/short 1 unit in predicted direction
+        pnl_cols.append(pnl.astype(np.float32))
         mu, sd = float(pnl.mean()), float(pnl.std())
         out["mean_pnl"][hk] = mu
         out["sharpe"][hk] = float(mu / sd * ann_factor) if sd > 0 else float("nan")
+        out["pnl_std"][hk] = sd
+        out["total_pnl"][hk] = float(pnl.sum())
+        # Win rate over the trading-relevant subset (non-flat ground truth);
+        # flat-return ticks earn exactly 0 and shouldn't count as wins or losses.
+        traded = pnl[moved]
+        out["pnl_win_rate"][hk] = (
+            float(np.mean(traded > 0)) if traded.size else float("nan"))
+        # Equity curve in window order. NOTE: build_index emits windows
+        # market-major (then by end_t), so this curve is NOT globally
+        # chronological -- it's a stable summary. Re-sort via the market/end_t
+        # arrays in the sidecar .npz for a time-faithful curve.
+        cum = np.cumsum(pnl)
+        out["cum_pnl_final"][hk] = float(cum[-1]) if cum.size else 0.0
+        drawdown = cum - np.maximum.accumulate(cum) if cum.size else cum
+        out["max_drawdown"][hk] = float(drawdown.min()) if drawdown.size else 0.0
 
     def _mean(d):
         vals = [v for v in d.values() if not math.isnan(v)]
@@ -338,6 +366,10 @@ def compute_metrics(pred, true, benchmark_pred, horizons, ann_factor):
     out["r2_oos_mean"] = _mean(out["r2_oos"])
     out["directional_accuracy_mean"] = _mean(out["directional_accuracy"])
     out["sharpe_mean"] = _mean(out["sharpe"])
+    if return_series:
+        series = (np.stack(pnl_cols, axis=1) if pnl_cols
+                  else np.empty((0, 0), np.float32))
+        return out, series
     return out
 
 
@@ -484,7 +516,8 @@ def _json_default(o):
     return str(o)
 
 
-def print_metric_table(horizons, in_sample, out_sample, bench_lin=None):
+def print_metric_table(horizons, in_sample, out_sample, bench_lin=None,
+                       validation=None):
     hk = [str(h) for h in horizons]
     def row(label, d, key, fmt="{:>10.4f}"):
         cells = "".join(fmt.format(d[key][h]) for h in hk)
@@ -496,11 +529,23 @@ def print_metric_table(horizons, in_sample, out_sample, bench_lin=None):
     row("R2_OS", out_sample, "r2_oos")
     row("Directional accuracy", out_sample, "directional_accuracy")
     row("Sharpe (annualized)", out_sample, "sharpe")
+    row("Total PnL", out_sample, "total_pnl", "{:>10.2e}")
+    row("PnL win rate", out_sample, "pnl_win_rate")
+    row("Max drawdown", out_sample, "max_drawdown", "{:>10.2e}")
     row("MSE model", out_sample, "mse_model", "{:>10.2e}")
     row("MSE naive (benchmark)", out_sample, "mse_naive", "{:>10.2e}")
     print(f"  -> mean R2_OS={out_sample['r2_oos_mean']:.4f}  "
           f"mean DirAcc={out_sample['directional_accuracy_mean']:.4f}  "
           f"mean Sharpe={out_sample['sharpe_mean']:.4f}")
+    if validation is not None:
+        print("\nVALIDATION (model-selection split -- rank on this, not test)")
+        print(header)
+        row("R2_OS", validation, "r2_oos")
+        row("Directional accuracy", validation, "directional_accuracy")
+        row("Sharpe (annualized)", validation, "sharpe")
+        print(f"  -> mean R2_OS={validation['r2_oos_mean']:.4f}  "
+              f"mean DirAcc={validation['directional_accuracy_mean']:.4f}  "
+              f"mean Sharpe={validation['sharpe_mean']:.4f}")
     print("\nIN-SAMPLE (train)")
     print(header)
     row("R2_OS", in_sample, "r2_oos")
@@ -606,14 +651,26 @@ def run_experiment(cfg: Config, *, write: bool = True, return_model: bool = Fals
         naive = np.broadcast_to(t_mu, true.shape) # constant train-mean predictor
         return compute_metrics(pred, true, naive, cfg.horizons, cfg.sharpe_ann_factor)
 
-    out_sample = eval_split(test_loader, test_idx)
-    # Validation metrics drive model/hyper-parameter selection in the sweep;
-    # the test split is reported only once, for the finally-chosen config.
-    validation = eval_split(val_loader, val_idx) if has_val else None
+    # Out-of-sample is computed inline (not via eval_split) so we can keep the
+    # raw pred/true and the per-window PnL series for the sidecar .npz.
+    oos_pred = predict(model, test_loader, device) * t_sigma + t_mu
+    oos_true = gather_targets(markets, test_idx)
+    oos_naive = np.broadcast_to(t_mu, oos_true.shape)
+    out_sample, oos_pnl = compute_metrics(
+        oos_pred, oos_true, oos_naive, cfg.horizons, cfg.sharpe_ann_factor,
+        return_series=True)
+    # Window->(market, end_t) so the series can be re-sorted chronologically.
+    oos_market = np.array([markets[int(m)]["key"] for m in test_idx[:, 0]])
+    oos_end_t = test_idx[:, 1].astype(np.int64)
     # NOTE: train_loader is shuffled (for SGD), so its prediction order would
     # not line up with gather_targets(train_idx). Use a fresh un-shuffled
     # loader so in-sample preds/targets stay aligned. (Same fix as cnn_lstm.)
     in_sample  = eval_split(mk_loader(train_idx, False), train_idx)
+    # Validation-set metrics: THIS is the split to select models / hyper-params
+    # on. The out_of_sample (test) block is for final reporting only -- ranking
+    # on it leaks the test set. val_loader is non-shuffled, so its prediction
+    # order lines up with gather_targets(val_idx).
+    validation = eval_split(val_loader, val_idx) if has_val else None
 
     bench_lin = None
     if cfg.linear_benchmark:
@@ -627,7 +684,8 @@ def run_experiment(cfg: Config, *, write: bool = True, return_model: bool = Fals
                                         cfg.sharpe_ann_factor)
             bench_lin["linear_fit_windows_used"] = n_fit
 
-    print_metric_table(cfg.horizons, in_sample, out_sample, bench_lin)
+    print_metric_table(cfg.horizons, in_sample, out_sample, bench_lin,
+                       validation=validation)
 
     # --- record ---
     record = {
@@ -653,6 +711,7 @@ def run_experiment(cfg: Config, *, write: bool = True, return_model: bool = Fals
         },
         "metrics": {
             "validation": validation,
+            "validation": validation,
             "out_of_sample": out_sample,
             "in_sample": in_sample,
             "linear_benchmark_oos": bench_lin,
@@ -677,7 +736,28 @@ def run_experiment(cfg: Config, *, write: bool = True, return_model: bool = Fals
             pt_path = detail_path.with_suffix(".pt")
             pt_path.write_bytes(model_state)
             print(f"Saved model checkpoint  -> {pt_path}")
-    return {"record": record, "model_state": model_state}
+
+    # Always persist the full out-of-sample per-window PnL series as a sidecar
+    # .npz. Locally we write it next to the run JSON; on Modal (write=False) we
+    # ship the bytes back and the local entrypoint writes the file.
+    import io as _io
+    pnl_buf = _io.BytesIO()
+    np.savez_compressed(
+        pnl_buf,
+        pnl=oos_pnl,
+        pred=oos_pred.astype(np.float32),
+        true=oos_true.astype(np.float32),
+        market=oos_market,
+        end_t=oos_end_t,
+        horizons=np.asarray(cfg.horizons),
+    )
+    pnl_bytes = pnl_buf.getvalue()
+    if write and detail_path is not None:
+        pnl_path = detail_path.with_name(detail_path.stem + "_pnl.npz")
+        pnl_path.write_bytes(pnl_bytes)
+        print(f"Saved OOS PnL series    -> {pnl_path}")
+
+    return {"record": record, "model_state": model_state, "pnl": pnl_bytes}
 
 
 # --------------------------------------------------------------------------- #

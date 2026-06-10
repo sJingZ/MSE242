@@ -68,6 +68,11 @@ MODEL_REGISTRY = {
         "module": "lstm",
         "label": "LSTM (OF order-flow mid-price-return forecaster)",
     },
+    "lstm_mlp": {
+        "file": SRC_DIR / "lstm_mlp.py",
+        "module": "lstm_mlp",
+        "label": "LSTM-MLP (OF order-flow mid-price-return forecaster)",
+    },
 }
 
 
@@ -156,19 +161,27 @@ TRAIN_FNS = {
 # --------------------------------------------------------------------------- #
 # Local helpers                                                                #
 # --------------------------------------------------------------------------- #
-def _save_results(model: str, payload: dict, save_model: bool) -> None:
+def _save_results(model: str, payload: dict, save_model: bool,
+                  runs_subdir: str = "") -> None:
     """Persist a remote run's payload into the local results/ directory.
 
     Self-contained (stdlib only) so the Modal CLI's Python env does not need
     torch/numpy installed just to write the JSON results back. The format mirrors
     cnn_lstm.record_experiment exactly: a per-run JSON in results/runs/ plus an
     appended line in results/experiments.jsonl.
+
+    ``runs_subdir`` redirects the per-run detail files (JSON + .pt + _pnl.npz)
+    into results/runs/<runs_subdir>/ to keep e.g. a tuning sweep organized. The
+    append-only experiments.jsonl log stays global so ranking tools see every
+    run regardless of subdir.
     """
     import json
     import re
 
     record = payload["record"]
     runs_dir = RESULTS_DIR / "runs"
+    if runs_subdir:
+        runs_dir = runs_dir / runs_subdir
     runs_dir.mkdir(parents=True, exist_ok=True)
 
     ts = record["timestamp"].replace(":", "").replace("-", "").replace(".", "_")
@@ -187,6 +200,14 @@ def _save_results(model: str, payload: dict, save_model: bool) -> None:
         pt_path = detail_path.with_suffix(".pt")
         pt_path.write_bytes(payload["model_state"])
         print(f"Saved model checkpoint -> {pt_path}")
+
+    # Models that return an out-of-sample PnL series (e.g. lstm) ship it back as
+    # .npz bytes; persist it next to the run JSON. cnn_lstm omits the key today,
+    # so this is a no-op there.
+    if payload.get("pnl"):
+        pnl_path = detail_path.with_name(detail_path.stem + "_pnl.npz")
+        pnl_path.write_bytes(payload["pnl"])
+        print(f"Saved OOS PnL series -> {pnl_path}")
 
 
 def _apply_quick(p: dict) -> dict:
@@ -224,6 +245,11 @@ def main(
     num_layers: int = 1,
     dropout: float = 0.0,
     forget_bias_init: float = 1.0,
+    # --- lstm_mlp-only head knobs (ignored by other models) ---
+    mlp_hidden: int = 64,
+    mlp_layers: int = 1,
+    mlp_dropout: float = 0.0,
+    mlp_activation: str = "relu",
     batch_size: int = 256,
     lr: float = 1e-3,
     weight_decay: float = 0.0,
@@ -234,6 +260,7 @@ def main(
     linear_fit_windows: int = 40000,
     seed: int = 42,
     tag: str = "modal",
+    runs_subdir: str = "",  # results/runs/<subdir>/ for per-run JSON/.pt/.npz
 ):
     """Run a registered model on Modal and pull its results back locally.
 
@@ -267,6 +294,8 @@ def main(
         hidden=hidden, cnn_filters=cnn_filters,
         inception_filters=inception_filters, num_layers=num_layers,
         dropout=dropout, forget_bias_init=forget_bias_init,
+        mlp_hidden=mlp_hidden, mlp_layers=mlp_layers,
+        mlp_dropout=mlp_dropout, mlp_activation=mlp_activation,
         batch_size=batch_size, lr=lr,
         weight_decay=weight_decay, max_epochs=max_epochs, patience=patience,
         grad_clip=grad_clip, linear_benchmark=linear_benchmark,
@@ -278,5 +307,5 @@ def main(
     print(f"Running model '{model}' on Modal (gpu={gpu}) ...")
     payload = TRAIN_FNS[gpu].remote(model, params, save_model)
 
-    _save_results(model, payload, save_model)
+    _save_results(model, payload, save_model, runs_subdir)
     print("Done.")
