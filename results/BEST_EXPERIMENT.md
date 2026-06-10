@@ -217,3 +217,84 @@ on 4/5 horizons) and the linear benchmark on all three metrics, with ~61%
 directional accuracy and a ~0.57 annualized Sharpe. The signal is small in
 absolute terms — expected for tick-level market microstructure — but consistent
 and statistically credible across seeds.
+
+---
+
+# Best LSTM — `ls2-stride5-nl1-h128`
+
+**Selected on validation** (composite score) from the `ls1-`/`ls2-` sweeps; single
+seed 42, no stage-3 seed averaging. Winning lever was **data volume**:
+`train_stride 5` (~286k train windows) at `lr 2e-3`. 77,445 parameters.
+
+| Group     | Parameter                            | Value |
+| --------- | ------------------------------------ | ----- |
+| **Model** | `hidden` / `num_layers`              | 128 / 1 |
+| **Train** | `lr` / `weight_decay`                | **2e-3** / 0 |
+|           | `train_stride` (train windows)       | **5** (285,857) |
+|           | `batch` / `max_epochs` / `patience`  | 256 / 60 / 8 |
+|           | epochs run / `best_val_loss`         | 10 / 3.3907 |
+
+Train loss 0.989 → 0.842 (learned; not under-trained). Means over h = 1,2,3,5,10:
+
+| Metric (mean)        | Validation (selection) | **Test (report)** | In-sample | Ridge benchmark |
+| -------------------- | ---------------------- | ----------------- | --------- | --------------- |
+| R²_OS                | +0.0154                | **−0.0005**       | +0.0363   | −0.0115         |
+| Directional accuracy | 0.6374                 | **0.6085**        | 0.6362    | 0.5565          |
+| Sharpe (annualized)  | +0.928                 | **+0.385**        | +0.785    | +0.118          |
+
+Per-horizon **test** directional accuracy: 0.709 / 0.600 / 0.618 / 0.585 / 0.531.
+
+**Read:** validation R²=+0.015 collapses to ≈0 on test (−0.0005) — the train→test
+distribution shift. Directional accuracy is the robust signal: ~61% test, above
+chance and above Ridge (0.557) on every horizon.
+
+---
+
+# Best LSTM-MLP — `ml2-h128-mlp1x64`
+
+**Selected on validation** from the `ml1-`/`ml2-` sweeps; single seed 42, no
+stage-3 seed averaging. Stage-2 capacity sweep showed **bigger ≠ better** — the
+simplest head (1×64) tied the top, so it is the pick (identical config to
+`ml1-lr1e3-st10`). 85,381 parameters.
+
+| Group     | Parameter                                   | Value |
+| --------- | ------------------------------------------- | ----- |
+| **Model** | `hidden` / `num_layers`                     | 128 / 1 |
+|           | MLP head (`mlp_layers` × `mlp_hidden`, act) | 1 × 64, ReLU |
+| **Train** | `lr` / `weight_decay`                       | **1e-3** / 0 |
+|           | `train_stride` (train windows)              | **10** (142,930) |
+|           | `batch` / `max_epochs` / `patience`         | 256 / 60 / 8 |
+|           | epochs run / `best_val_loss`                | 11 / 3.5427 |
+
+Train loss 0.991 → 0.827. Means over h = 1,2,3,5,10:
+
+| Metric (mean)        | Validation (selection) | **Test (report)** | In-sample | Ridge benchmark |
+| -------------------- | ---------------------- | ----------------- | --------- | --------------- |
+| R²_OS                | +0.0120                | **−0.0017**       | +0.0415   | −0.0106         |
+| Directional accuracy | 0.6363                 | **0.5969**        | 0.6234    | 0.5618          |
+| Sharpe (annualized)  | +0.923                 | **+0.478**        | +0.818    | +0.130          |
+
+Per-horizon **test** directional accuracy: 0.706 / 0.567 / 0.592 / 0.584 / 0.535.
+
+**Read:** same pattern — validation R²=+0.012 → ≈0 on test; directional accuracy
+(~60% test) and Sharpe (+0.48) stay positive and beat Ridge. The MLP head buys
+nothing over the plain LSTM read-out.
+
+---
+
+# Cross-model summary (test, seed 42; mean over horizons)
+
+| Model         | R²_OS       | Dir. acc.  | Sharpe      | Params  | Notes |
+| ------------- | ----------- | ---------- | ----------- | ------- | ----- |
+| Ridge linear  | −0.012      | 0.557      | +0.118      | —       | benchmark; loses to naive on R² |
+| **LSTM**      | −0.0005     | 0.6085     | +0.385      | 77,445  | stride-5 (most data), lr 2e-3 |
+| **LSTM-MLP**  | −0.0017     | 0.5969     | +0.478      | 85,381  | MLP head adds nothing |
+| **CNN-LSTM**  | **+0.0007** | **0.6134** | **+0.5514** | 125,125 | best overall; only positive test R² (seed-avg +0.0017) |
+
+**Takeaway:** the CNN-LSTM is best on every test metric, but the simple LSTM is
+close on directional accuracy (0.609 vs 0.613) at 1.6× fewer parameters —
+reproducing the paper's "simple ≈ complex once OF features are used." All three
+neural models beat the linear benchmark; the LSTM/LSTM-MLP test R² sits at ≈0 (vs
+the CNN-LSTM's small positive), a consequence of selecting on a validation block
+more favorable than the held-out test period. Both LSTM picks are **single-seed
+(42)** — run stage-3 seed sweeps to firm them up.
