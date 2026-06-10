@@ -78,6 +78,7 @@ class Config:
     grad_clip: float = 1.0          # max grad norm (<=0 disables)
     standardize_targets: bool = True
     # Benchmarks / misc
+    per_market_eval: bool = False   # also report test metrics per individual market
     linear_benchmark: bool = True
     linear_fit_windows: int = 40000  # subsample size for the linear benchmark
     sharpe_ann_factor: float = math.sqrt(252)
@@ -534,6 +535,9 @@ def build_config_from_args() -> Config:
     p.add_argument("--no-standardize-targets", dest="standardize_targets",
                    action="store_false")
     # benchmarks / misc
+    p.add_argument("--per-market-eval", dest="per_market_eval",
+                   action="store_true",
+                   help="also report test metrics for each market separately")
     p.add_argument("--no-linear-benchmark", dest="linear_benchmark",
                    action="store_false")
     p.add_argument("--linear-fit-windows", type=int, default=d.linear_fit_windows)
@@ -555,6 +559,7 @@ def build_config_from_args() -> Config:
         lr=args.lr, weight_decay=args.weight_decay, max_epochs=args.max_epochs,
         patience=args.patience, grad_clip=args.grad_clip,
         standardize_targets=args.standardize_targets,
+        per_market_eval=args.per_market_eval,
         linear_benchmark=args.linear_benchmark,
         linear_fit_windows=args.linear_fit_windows, seed=args.seed,
         device=args.device, num_workers=args.num_workers, tag=args.tag)
@@ -676,6 +681,34 @@ def run_experiment(cfg: Config, *, write: bool = True, return_model: bool = Fals
     # in-sample preds/targets stay aligned.
     in_sample = eval_split(mk(train_idx, False), train_idx)
 
+    # --- per-market test metrics (optional) ---
+    # Evaluate the SAME trained model on each market's test windows separately,
+    # reusing the GLOBAL target standardization (t_mu/t_sigma) and the GLOBAL
+    # naive baseline (train mean) so the per-market numbers stay comparable to
+    # each other and to the pooled `out_of_sample` block above.
+    per_market = None
+    if cfg.per_market_eval and len(test_idx):
+        per_market = {}
+        for mi in np.unique(test_idx[:, 0]):
+            sub = test_idx[test_idx[:, 0] == mi]
+            sub_metrics = eval_split(mk(sub, False), sub)
+            true_h1 = gather_targets(markets, sub)[:, 0]
+            per_market[markets[int(mi)]["key"]] = {
+                "n_windows": int(len(sub)),
+                # realized vol of the per-tick mid change on this market's test
+                # windows (same quantity scripts/group_markets.py groups on).
+                "realized_vol_test": float(np.std(true_h1.astype(np.float64))),
+                "r2_oos_mean": sub_metrics["r2_oos_mean"],
+                "directional_accuracy_mean": sub_metrics["directional_accuracy_mean"],
+                "sharpe_mean": sub_metrics["sharpe_mean"],
+                "metrics": sub_metrics,
+            }
+        print("\nPER-MARKET (test) — mean over horizons")
+        print(f"  {'market':<34}{'n':>9}{'R2_OS':>10}{'DirAcc':>10}{'Sharpe':>10}")
+        for k, v in per_market.items():
+            print(f"  {k:<34}{v['n_windows']:>9,}{v['r2_oos_mean']:>10.4f}"
+                  f"{v['directional_accuracy_mean']:>10.4f}{v['sharpe_mean']:>10.4f}")
+
     bench_lin = None
     if cfg.linear_benchmark:
         lin_pred, n_fit = linear_benchmark(
@@ -716,6 +749,7 @@ def run_experiment(cfg: Config, *, write: bool = True, return_model: bool = Fals
             "validation": validation,
             "out_of_sample": out_sample,
             "in_sample": in_sample,
+            "per_market": per_market,
             "linear_benchmark_oos": bench_lin,
         },
     }

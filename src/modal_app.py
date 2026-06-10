@@ -219,6 +219,7 @@ def main(
     max_epochs: int = 50,
     patience: int = 5,
     grad_clip: float = 1.0,
+    per_market_eval: bool = False,
     linear_benchmark: bool = True,
     linear_fit_windows: int = 40000,
     seed: int = 42,
@@ -256,7 +257,8 @@ def main(
         hidden=hidden, cnn_filters=cnn_filters,
         inception_filters=inception_filters, batch_size=batch_size, lr=lr,
         weight_decay=weight_decay, max_epochs=max_epochs, patience=patience,
-        grad_clip=grad_clip, linear_benchmark=linear_benchmark,
+        grad_clip=grad_clip, per_market_eval=per_market_eval,
+        linear_benchmark=linear_benchmark,
         linear_fit_windows=linear_fit_windows, seed=seed, tag=tag,
     )
     if quick:
