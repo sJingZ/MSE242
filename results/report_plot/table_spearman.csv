@@ -1,0 +1,4 @@
+Metric,ρ (full vol),p (full),ρ (test vol),p (test)
+Out-of-sample $R^2$,0.0909,0.7787,0.7832,0.0026
+Directional accuracy,0.0559,0.8629,0.0909,0.7787
+Annualized Sharpe,-0.0210,0.9484,0.0699,0.8290

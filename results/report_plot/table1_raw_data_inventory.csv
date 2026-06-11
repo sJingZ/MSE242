@@ -1,0 +1,13 @@
+Market,Group,Snapshots,Med. spread,Tight frac,Med. mid,Vol (full),Vol (test)
+Lakers vs Rockets,Low,"377,169",0.0110,0.9311,0.7475,0.0021,0.0009
+Spurs vs Timberwolves,Low,"113,201",0.0100,0.9176,0.8000,0.0023,0.0013
+Thunder vs Lakers,Low,"45,375",0.0100,0.9992,0.9605,0.0022,0.0004
+Suns vs Thunder,Low,"38,977",0.0070,0.9432,0.0110,0.0019,0.0004
+Timberwolves vs Nuggets,Mid,"329,878",0.0100,0.9165,0.4250,0.0023,0.0027
+76ers vs Celtics,Mid,"263,561",0.0130,0.9484,0.0835,0.0024,0.0038
+Pistons vs Magic,Mid,"237,911",0.0110,0.8638,0.5360,0.0025,0.0021
+Knicks vs 76ers,Mid,"39,933",0.0150,0.9297,0.8700,0.0040,0.0003
+Raptors vs Cavaliers,High,"262,378",0.0170,0.9035,0.2125,0.0082,0.0207
+Knicks vs Hawks,High,"116,366",0.0200,0.8622,0.6950,0.0046,0.0018
+Spurs vs Trail Blazers,High,"114,890",0.0170,0.8761,0.8990,0.0047,0.0004
+Cavaliers vs Pistons,High,"102,193",0.0200,0.6948,0.3850,0.0071,0.0075
