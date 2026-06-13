@@ -4,9 +4,10 @@ Forecasting short-horizon mid-price returns on Polymarket NBA series-winner cont
 
 **Authors:** Christy Yang, Jing Zou
 
-## 📄 Final Report
+## Final Report
 
-> **The final report for grading is [`MSE242_FinalReport.pdf`](MSE242_FinalReport.pdf).**
+**The final report for grading is [`MSE242_FinalReport.pdf`](MSE242_FinalReport.pdf).**
+
 
 ## Repository layout
 
