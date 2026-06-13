@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -d */)",
+      "Bash(ls scripts *)",
+      "Bash(ls README*)"
+    ]
+  }
+}
